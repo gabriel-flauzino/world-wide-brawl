@@ -1,0 +1,8 @@
+namespace supercell_sfw;
+
+table FBExports {
+    export_ids:[uint16];
+    export_name_ids:[int32];
+}
+
+root_type FBExports;

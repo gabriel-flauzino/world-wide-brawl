@@ -1,0 +1,25 @@
+{
+  "name": "world-wide-brawl",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  },
+  "dependencies": {
+    "@pixi/compressed-textures": "^7.4.3",
+    "@pixi/ui": "^2.2.2",
+    "colyseus.js": "^0.16.10",
+    "flatbuffers": "^25.2.10",
+    "gsap": "^3.12.7",
+    "hyperscript": "^2.0.2",
+    "node-vibrant": "^4.0.3",
+    "pixi-filters": "^6.1.2",
+    "pixi.js": "^8.8.1"
+  }
+}
