@@ -1,9 +1,10 @@
-import { Container, Geometry, Matrix, Mesh, Rectangle, Shader, Texture } from "pixi.js";
+import { Container, Geometry, Mesh, Rectangle, Shader } from "pixi.js";
 import { ColorTransform } from "../../classes/swf_objects/ColorTransform";
 import { Matrix2x3 } from "../../classes/swf_objects/Matrix2x3";
 import { Shape } from "../../classes/swf_objects/Shape";
 
 export class ShapeComponent extends Container {
+    shape;
     matrix2x3;
     renderized = false;
 
@@ -17,7 +18,7 @@ export class ShapeComponent extends Container {
         this.objectId = shape.id;
     }
 
-    render(colorTransform = new ColorTransform(), matrix2x3 = new Matrix2x3(), scalingGrid, name, blend) {
+    async render(colorTransform = new ColorTransform(), matrix2x3 = new Matrix2x3(), scalingGrid, name, blend) {
         this.label = name;
 
         if (!this.renderized) {
@@ -27,11 +28,8 @@ export class ShapeComponent extends Container {
                 matrix.a = matrix.d = 1;
             }
 
-            matrix = new Matrix(matrix.a, matrix.b, matrix.c, matrix.d, matrix.x, matrix.y);
-
-            for (let [i, command] of Object.entries(this.shape.commands)) {
-
-                const texture = Texture.from(`${this.shape.swf.filename}_${command.textureIndex}_texture`);
+            for (let command of this.shape.commands) {
+                const { texture } = this.shape.swf.textures.get(command.textureIndex);
 
                 const vertices = [];
                 const uvs = [];
@@ -72,48 +70,50 @@ export class ShapeComponent extends Container {
             
             
             void main() {
-                vec3 pos = vec3(aPosition, 1.0);
+                vec3 pos = uTransform * vec3(aPosition, 1.0);
                 mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
                 gl_Position = vec4((mvp * vec3(pos.xy, 1.0)).xy, 0.0, 1.0);
             
                 vUV = aUV;
             }
         `,
-                        fragment: `
+                        fragment: `            
+            uniform sampler2D uTexture;
+                        
             in vec2 vUV;
             
-            uniform sampler2D uTexture;
-
-            uniform float uRedMultiplier;
+            /* uniform float uRedMultiplier;
             uniform float uGreenMultiplier;
             uniform float uBlueMultiplier;
             uniform float uRedAddition;
             uniform float uGreenAddition;
             uniform float uBlueAddition;
-            uniform float uAlpha;
+            uniform float uAlpha; */
+
+            uniform vec4 uColorMul;
+            uniform vec3 uColorAdd;
             
             void main() {
                 vec4 texColor = texture2D(uTexture, vUV);
                 
-                float a = texColor.a * uAlpha;
+                /* float a = texColor.a * uAlpha;
                 float r = (texColor.r * uRedMultiplier + uRedAddition) * a;
                 float g = (texColor.g * uGreenMultiplier + uGreenAddition) * a;
                 float b = (texColor.b * uBlueMultiplier + uBlueAddition) * a;
-                
-                gl_FragColor =  vec4(r, g, b, a);
+                gl_FragColor =  vec4(r, g, b, a); */
+
+                vec4 color = texColor * uColorMul;
+                color.rgb += uColorAdd * color.a;
+                gl_FragColor = vec4(color.rgb * uColorMul.a, color.a); 
             }
         `
                     },
                     resources: {
                         uTexture: texture.source,
                         uniforms: {
-                            uRedMultiplier: { type: "f32", value: colorTransform.redMultiplier / 255 },
-                            uGreenMultiplier: { type: "f32", value: colorTransform.greenMultiplier / 255 },
-                            uBlueMultiplier: { type: "f32", value: colorTransform.blueMultiplier / 255 },
-                            uRedAddition: { type: "f32", value: colorTransform.redAddition / 255 },
-                            uGreenAddition: { type: "f32", value: colorTransform.greenAddition / 255 },
-                            uBlueAddition: { type: "f32", value: colorTransform.blueAddition / 255 },
-                            uAlpha: { type: "f32", value: colorTransform.alpha / 255 }
+                            uColorMul: { type: "vec4<f32>", value: [colorTransform.redMultiplier / 255, colorTransform.greenMultiplier / 255, colorTransform.blueMultiplier / 255, colorTransform.alpha / 255] },
+                            uColorAdd: { type: "vec3<f32>", value: [colorTransform.redAddition / 255, colorTransform.greenAddition / 255, colorTransform.blueAddition / 255] },
+                            uTransform: { type: "mat3x3<f32>", value: matrix.toArray(true) }
                         }
                     },
                 });
@@ -148,26 +148,49 @@ export class ShapeComponent extends Container {
     applyMatrixAndColor(colorTransform = new ColorTransform(), matrix2x3 = new Matrix2x3(), scalingGrid, name, blend) {
         let scaleX = matrix2x3.a;
         let scaleY = matrix2x3.d;
+        let x = matrix2x3.tx;
+        let y = matrix2x3.ty;
 
         if (scalingGrid && this.shape.commands.length > 1) {
             matrix2x3.a = matrix2x3.d = 1;
+            matrix2x3.tx = matrix2x3.ty = 0;
         }
 
-        for (let mesh of this.children) {
-            let u = mesh.shader.resources.uniforms.uniforms;
-            u.uRedMultiplier = colorTransform.redMultiplier / 255;
-            u.uGreenMultiplier = colorTransform.greenMultiplier / 255;
-            u.uBlueMultiplier = colorTransform.blueMultiplier / 255;
-            u.uRedAddition = colorTransform.redAddition / 255;
-            u.uGreenAddition = colorTransform.greenAddition / 255;
-            u.uBlueAddition = colorTransform.blueAddition / 255;
-            u.uAlpha = colorTransform.alpha / 255;
+        let updateMatrix = !this.matrix2x3 || !matrix2x3.equals(this.matrix2x3);
+        let updateColorTransform = !this.colorTransform || !colorTransform.equals(this.colorTransform);
 
-            new Matrix(matrix2x3.a, matrix2x3.b, matrix2x3.c, matrix2x3.d, matrix2x3.x, matrix2x3.y).decompose(mesh);
+        if (updateMatrix || updateColorTransform) {
+            for (let mesh of this.children) {
+                let u = mesh.shader.resources.uniforms.uniforms;
+
+                if (updateColorTransform) {
+                    u.uColorMul[0] = colorTransform.redMultiplier / 255;
+                    u.uColorMul[1] = colorTransform.greenMultiplier / 255;
+                    u.uColorMul[2] = colorTransform.blueMultiplier / 255;
+                    u.uColorMul[3] = colorTransform.alpha / 255;
+
+                    u.uColorAdd[0] = colorTransform.redAddition / 255;
+                    u.uColorAdd[1] = colorTransform.greenAddition / 255;
+                    u.uColorAdd[2] = colorTransform.blueAddition / 255;
+                }
+
+                if (updateMatrix) {
+                    u.uTransform[0] = matrix2x3.a;
+                    u.uTransform[1] = matrix2x3.b;
+                    u.uTransform[3] = matrix2x3.c;
+                    u.uTransform[4] = matrix2x3.d;
+                    u.uTransform[6] = matrix2x3.tx;
+                    u.uTransform[7] = matrix2x3.ty;
+                }
+
+                // matrix2x3.decompose(mesh);
+            }
         }
 
         matrix2x3.a = scaleX;
         matrix2x3.d = scaleY;
+        matrix2x3.tx = x;
+        matrix2x3.ty = y;
 
         if (scalingGrid) {
             const scaledWidth = this.originalWidth * matrix2x3.a;
@@ -182,13 +205,17 @@ export class ShapeComponent extends Container {
 
                 // X-scaling
 
-                L.x = matrix2x3.x + L.bounds.minX * (matrix2x3.a - 1);
-                R.x = matrix2x3.x + R.bounds.maxX * (matrix2x3.a - 1);
+                L.x = matrix2x3.tx + L.bounds.minX * (matrix2x3.a - 1);
+                R.x = matrix2x3.tx + R.bounds.maxX * (matrix2x3.a - 1);
 
                 C.scale.x = (scaledWidth - L.defaultWidth - R.defaultWidth) / C.defaultWidth;
-                C.x = (matrix2x3.x - C.bounds.minX * (C.scale.x - 1)) + L.bounds.minX * (matrix2x3.a - 1);
+                C.x = (matrix2x3.tx - C.bounds.minX * (C.scale.x - 1)) + L.bounds.minX * (matrix2x3.a - 1);
 
                 // Y-scaling
+
+                L.y = matrix2x3.ty;
+                C.y = matrix2x3.ty;
+                R.y = matrix2x3.ty;
 
                 L.scale.y = matrix2x3.d;
                 C.scale.y = matrix2x3.d;
@@ -210,40 +237,41 @@ export class ShapeComponent extends Container {
 
                 // X-scaling
 
-                TL.x = matrix2x3.x + TL.bounds.minX * (matrix2x3.a - 1);
-                L.x = matrix2x3.x + L.bounds.minX * (matrix2x3.a - 1);
-                BL.x = matrix2x3.x + BL.bounds.minX * (matrix2x3.a - 1);
-                
-                TR.x = matrix2x3.x + TR.bounds.maxX * (matrix2x3.a - 1); 
-                R.x = matrix2x3.x + R.bounds.maxX * (matrix2x3.a - 1);
-                BR.x = matrix2x3.x + BR.bounds.maxX * (matrix2x3.a - 1);
+                TL.x = matrix2x3.tx + TL.bounds.minX * (matrix2x3.a - 1);
+                L.x = matrix2x3.tx + L.bounds.minX * (matrix2x3.a - 1);
+                BL.x = matrix2x3.tx + BL.bounds.minX * (matrix2x3.a - 1);
+
+                TR.x = matrix2x3.tx + TR.bounds.maxX * (matrix2x3.a - 1);
+                R.x = matrix2x3.tx + R.bounds.maxX * (matrix2x3.a - 1);
+                BR.x = matrix2x3.tx + BR.bounds.maxX * (matrix2x3.a - 1);
 
                 T.scale.x = (scaledWidth - L.defaultWidth - R.defaultWidth) / T.defaultWidth;
-                T.x = (matrix2x3.x - T.bounds.minX * (T.scale.x - 1)) + L.bounds.minX * (matrix2x3.a - 1);
+                T.x = (matrix2x3.tx - T.bounds.minX * (T.scale.x - 1)) + L.bounds.minX * (matrix2x3.a - 1);
                 C.scale.x = (scaledWidth - L.defaultWidth - R.defaultWidth) / C.defaultWidth;
-                C.x = (matrix2x3.x - C.bounds.minX * (C.scale.x - 1)) + L.bounds.minX * (matrix2x3.a - 1);
+                C.x = (matrix2x3.tx - C.bounds.minX * (C.scale.x - 1)) + L.bounds.minX * (matrix2x3.a - 1);
                 B.scale.x = (scaledWidth - L.defaultWidth - R.defaultWidth) / B.defaultWidth;
-                B.x = (matrix2x3.x - B.bounds.minX * (B.scale.x - 1)) + L.bounds.minX * (matrix2x3.a - 1);
+                B.x = (matrix2x3.tx - B.bounds.minX * (B.scale.x - 1)) + L.bounds.minX * (matrix2x3.a - 1);
 
                 // Y-scaling
 
-                TL.y = matrix2x3.y + TL.bounds.minY * (matrix2x3.d - 1);
-                T.y = matrix2x3.y + T.bounds.minY * (matrix2x3.d - 1);
-                TR.y = matrix2x3.y + TR.bounds.minY * (matrix2x3.d - 1);
+                TL.y = matrix2x3.ty + TL.bounds.minY * (matrix2x3.d - 1);
+                T.y = matrix2x3.ty + T.bounds.minY * (matrix2x3.d - 1);
+                TR.y = matrix2x3.ty + TR.bounds.minY * (matrix2x3.d - 1);
 
-                BL.y = matrix2x3.y + BL.bounds.maxY * (matrix2x3.d - 1);
-                B.y = matrix2x3.y + B.bounds.maxY * (matrix2x3.d - 1);
-                BR.y = matrix2x3.y + BR.bounds.maxY * (matrix2x3.d - 1);
-                
+                BL.y = matrix2x3.ty + BL.bounds.maxY * (matrix2x3.d - 1);
+                B.y = matrix2x3.ty + B.bounds.maxY * (matrix2x3.d - 1);
+                BR.y = matrix2x3.ty + BR.bounds.maxY * (matrix2x3.d - 1);
+
                 L.scale.y = (scaledHeight - T.defaultHeight - B.defaultHeight) / L.defaultHeight;
-                L.y = (matrix2x3.y - L.bounds.minY * (L.scale.y - 1)) + T.bounds.minY * (matrix2x3.d - 1);
+                L.y = (matrix2x3.ty - L.bounds.minY * (L.scale.y - 1)) + T.bounds.minY * (matrix2x3.d - 1);
                 C.scale.y = (scaledHeight - T.defaultHeight - B.defaultHeight) / C.defaultHeight;
-                C.y = (matrix2x3.y - C.bounds.minY * (C.scale.y - 1)) + T.bounds.minY * (matrix2x3.d - 1);
+                C.y = (matrix2x3.ty - C.bounds.minY * (C.scale.y - 1)) + T.bounds.minY * (matrix2x3.d - 1);
                 R.scale.y = (scaledHeight - T.defaultHeight - B.defaultHeight) / R.defaultHeight;
-                R.y = (matrix2x3.y - R.bounds.minY * (R.scale.y - 1)) + T.bounds.minY * (matrix2x3.d - 1);
+                R.y = (matrix2x3.ty - R.bounds.minY * (R.scale.y - 1)) + T.bounds.minY * (matrix2x3.d - 1);
             }
         }
 
         this.matrix2x3 = matrix2x3;
+        this.colorTransform = colorTransform;
     }
 }

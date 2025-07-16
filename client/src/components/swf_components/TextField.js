@@ -8,6 +8,18 @@ import { Locales } from "../../classes/Locales";
 
 export class TextFieldComponent extends ShadowedText {
     renderized = false;
+    /**
+     * Custom text content. Overwrites the text if it's a TID.
+     */
+    customValue;
+    /**
+     * Text alignment horizontally and vertically
+     */
+    align = [0, 0];
+    /**
+     * Whether to adjust font size to fit in one line
+     */
+    adjustFontSize = false;
 
     /**
      * 
@@ -17,26 +29,25 @@ export class TextFieldComponent extends ShadowedText {
         super();
         this.textField = textField;
         this.objectId = textField.id;
+        this.setAdjustFontSize(textField.autoAdjustFontSize);
     }
 
-    render(colorTransform = new ColorTransform(), matrix2x3 = new Matrix2x3(), scalingGrid, name) {
+    render(colorTransform = new ColorTransform(), matrix2x3 = new Matrix2x3(), scalingGrid, name, blend, deltaMS, textMap) {
         if (!this.renderized) {
             const font = Assets.get("Lilita One");
 
             const aligns = {
-                0: [0, 0.5],
-                1: [1, 0],
+                0: [0, 0],
+                1: [0.5, 0],
                 2: [0.5, 0],
                 16: [0, 0.5],
                 17: [1, 0.5],
                 18: [0.5, 0.5],
                 19: [0, 0],
                 32: [0, 0],
-                33: [0, 0],
-                34: [0, 0]
+                33: [1, 0.5],
+                34: [0, 1]
             }
-
-            this.align = aligns[this.textField.align];
 
             this.__init({
                 text: "",
@@ -48,24 +59,28 @@ export class TextFieldComponent extends ShadowedText {
                     fontStyle: this.textField.isItalic ? "italic" : "normal",
                     fill: argbDecToRgbaHex(this.textField.color),
                     wordWrap: true,
-                    wordWrapWidth: this.textField.bounds.width,
-                    align: this.align[0] ? this.align[0] % 1 ? "center" : "right" : "left"
+                    wordWrapWidth: this.textField.bounds.width
                 },
-                outlineColor: argbDecToRgbaHex(this.textField.outlineColor)
+                outlineColor: argbDecToRgbaHex(this.textField.outlineColor || -16777216)
             });
 
-            this.label = name;
+            this.setAlign(...aligns[this.textField.align]);
 
+            this.label = name;
             this.renderized = true;
         }
 
-        this.applyMatrixAndColor(colorTransform, matrix2x3, scalingGrid, name);
+        this.applyMatrixAndColor(colorTransform, matrix2x3, name, textMap);
 
         return this;
     }
 
-    applyMatrixAndColor(colorTransform = new ColorTransform(), matrix2x3 = new Matrix2x3(), scalingGrid, name) {
-        let content = name || "";
+    applyMatrixAndColor(colorTransform = new ColorTransform(), matrix2x3 = new Matrix2x3(), name, textMap) {
+        let content = (this.customValue ?? (name || "")).toString();
+
+        if (textMap[content]) {
+            content = textMap[content];
+        }
 
         if (content.startsWith("TID_")) {
             let tid = Locales.get(content);
@@ -76,21 +91,46 @@ export class TextFieldComponent extends ShadowedText {
 
         this.text = content;
 
-        const xPos = this.textField.bounds.width * this.align[0];
-        const yPos = this.textField.bounds.height * this.align[1];
+        const xPos = this.textField.bounds.x + this.textField.bounds.width * this.align[0];
+        const yPos = this.textField.bounds.y + this.textField.bounds.height * this.align[1];
 
-        matrix2x3.move(this.textField.bounds.x + xPos, this.textField.bounds.y + yPos);
-        new Matrix(matrix2x3.a, matrix2x3.b, matrix2x3.c, matrix2x3.d, matrix2x3.x, matrix2x3.y).decompose(this);
+        matrix2x3.move(xPos, yPos);
+        matrix2x3.decompose(this);
 
-        if (this.textField.autoAdjustFontSize && this.width > this.textField.bounds.width) {   
+        if (this.adjustFontSize && this.width > this.textField.bounds.width) {   
             let scaleX = this.scale.x * this.textField.bounds.width / this.width;
             let scaleY = this.scale.x * scaleX / this.scale.y;
 
             this.scale.set(scaleX, scaleY);
         }
 
+        this.alpha = colorTransform.alpha / 255;
+    }
+    
+    /**
+     * Sets the custom content value of the text field.
+     * @param {string} text The content.
+     */
+    setCustomValue(text) {
+        this.customValue = text;
+        return this;
+    }
 
+    /**
+     * Whether to adjust font size to fit in one line
+     * @param {boolean} bool 
+     */
+    setAdjustFontSize(bool) {
+        this.adjustFontSize = bool;
+        return this;
+    }
+
+    setAlign(hor = this.align[0], ver = this.align[1]) {
+        this.align = [hor, ver];
         this.anchor.set(this.align[0], this.align[1]);
+        this.textComponent.style.align = this.align[0] ? this.align[0] % 1 ? "center" : "right" : "left";
+        this.textShadow.style.align = this.align[0] ? this.align[0] % 1 ? "center" : "right" : "left";
+        return this;
     }
 }
 

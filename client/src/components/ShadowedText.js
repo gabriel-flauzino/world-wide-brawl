@@ -2,7 +2,13 @@ import { Container, TextStyle } from "pixi.js";
 import { DefaultText } from "./DefaultText";
 
 export class ShadowedText extends Container {
+    /**
+     * @type {DefaultText}
+     */
     textComponent;
+    /**
+     * @type {DefaultText}
+     */
     textShadow;
     anchor;
 

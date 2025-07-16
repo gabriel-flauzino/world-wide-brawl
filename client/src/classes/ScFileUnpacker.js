@@ -1,113 +1,64 @@
-import * as Zstd from "@bokuweb/zstd-wasm"
+// import * as Zstd from "@bokuweb/zstd-wasm";
+import * as fzstd from "fzstd";
 import { InputStream } from "./InputStream";
+import { clearBuffer } from "../helpers/clearBuffer";
 
-export class ScFileUnpacker {
-    static SC_MAGIC = 0x5343;
+export class SCWEBDecompresser {
     static SCWEB_MAGIC = 0x5343574542;
-    static FIVE_LITTLE_ENDIAN = this.swapEndian32(5);
-    static START_SECTION_BYTES = new TextEncoder().encode("START");
 
-    static unpack(data) {
-        let compressedData = new Uint8Array(data);
-        let stream = new InputStream(new DataView(data));
+    /**
+     * @type {InputStream}
+     */
+    stream;
 
-        let type = this.checkMagic(stream);
-        this.checkVersion(stream);
-
-        if (type == "SC") {
-            let metadataRootTableOffset = this.swapEndian32(stream.readInt());
-            this.skipBytes(stream, metadataRootTableOffset);
-
-            metadataRootTableOffset = null;
-        }
-
-        let decompressed = this.decompress(compressedData, stream);
-
-        stream.close();
-        
-        compressedData = null;
-        stream = null;
-        type = null;
-
-        return { decompressed };
+    /**
+     * Validates and decompress a SCWEB file stream.
+     * @param {ArrayBuffer} data 
+     */
+    constructor(data) {
+        this.stream = new InputStream(new DataView(data));
+        this.checkMagic();
     }
 
     /**
-         * 
-         * @param {Uint8Array} compressedData 
-         * @param {InputStream} stream 
-         */
-    static decompress(compressedData, stream) {
-        let decompressed;
+     * Decompressed the SCWEB file.
+     * @param {InputStream} stream 
+     */
+    decompress() {
+        let size = this.getDecompressedSize();
 
-        const offset = compressedData.byteLength - stream.available();
-        const startSectionOffset = this.indexOf(compressedData, this.START_SECTION_BYTES);
+        // providing a buffer with specified length
+        // improves decompression performance and
+        // reduces unnecessary memory usage
 
-        if (startSectionOffset != -1) {
-            decompressed = Zstd.decompress(compressedData.subarray(offset, startSectionOffset - offset));
-        } else {
-            decompressed = Zstd.decompress(compressedData.subarray(offset));
-        }
+        let output = new Uint8Array(size);
+        let compressedData = this.getCompressedData();
+        fzstd.decompress(compressedData, output);
 
-        return decompressed;
+        clearBuffer(compressedData);
+        this.stream.close();
+        this.stream = null;
+
+        return output;
     }
 
-    static checkMagic(stream) {
-        const magic = stream.readLong();
+    /**
+     * Validates file magic.
+     * @returns {string} 
+     */
+    checkMagic() {
+        const magic = this.stream.readLong();
 
-        if (magic == this.SCWEB_MAGIC) {
-            return "SCWEB";
-        } else {
-            stream.setOffset(0);
-            const magic = stream.readShort();
-
-            if (magic != this.SC_MAGIC)
-                throw new Error("Unknown file magic: " + magic);
-            
-            return "SC";
+        if (magic != SCWEBDecompresser.SCWEB_MAGIC) {
+            throw new Error("Unknown magic: " + magic);
         }
     }
 
-    static checkVersion(stream) {
-        let version = stream.readInt();
-
-        if (version == 4) {
-            version = stream.readInt();
-        }
-
-        if (version == this.FIVE_LITTLE_ENDIAN) {
-            version = 5;
-        }
-
-        if (version != 5)
-            throw new Error("Only version 5 files can be read. File version: " + version);
-
-        return version;
+    getDecompressedSize() {
+        return this.stream.readInt();
     }
 
-    static skipBytes(stream, bytes) {
-        stream.skip(bytes);
-    }
-
-    static swapEndian32(number) {
-        return (number >> 24) & 0xFF | (((number >> 16) & 0xFF) << 8) | (((number >> 8) & 0xFF) << 16) | ((number & 0xFF) << 24);
-    }
-
-    static indexOf(array, bytesToFind) {
-        for (let i = 0; i < array.length; i++) {
-            let found = true;
-            for (let j = 0; j < bytesToFind.length; j++) {
-                if (array[i + j] != bytesToFind[j]) {
-                    found = false;
-                    break;
-                }
-            }
-
-            if (found) {
-                return i;
-            }
-        }
-
-        return -1;
+    getCompressedData() {
+        return this.stream.readBytes();
     }
 }

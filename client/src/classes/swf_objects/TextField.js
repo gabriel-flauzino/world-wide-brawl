@@ -1,10 +1,5 @@
-import { Assets, Container, Rectangle, Text } from "pixi.js";
+import { Rectangle } from "pixi.js";
 import { FBResources, FBTextField } from "../../flatbuffers/supercell-sfw";
-import { ShadowedText } from "../../components/ShadowedText";
-import { DefaultText } from "../../components/DefaultText";
-import { ColorTransform } from "./ColorTransform";
-import { Matrix2x3 } from "./Matrix2x3";
-import { LayoutText } from "@pixi/layout/components";
 
 export class TextField {
     fontName = null;
@@ -66,9 +61,5 @@ export class TextField {
 
     setBendAngle(angle) {
         this.bendAngle = angle * 32767 / 360;
-    }
-
-    getId() {
-        return this.id;
     }
 }

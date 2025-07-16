@@ -1,5 +1,4 @@
 import { Game } from './classes/Game';
-import { Client } from "./classes/Client";
 import './reset.css';
 import './style.css';
 
@@ -12,8 +11,5 @@ if ('serviceWorker' in navigator) {
 initialize();
 
 async function initialize() {
-  const client = new Client();
-  const app = new Game(client);
-
-  await app.start(client);
+  await new Game().start();
 };

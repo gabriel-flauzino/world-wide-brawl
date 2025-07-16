@@ -1,10 +1,7 @@
 export class Export {
     constructor(swf, id, name) {
         this.swf = swf;
-        this._id = id;
-        this._name = name;
+        this.id = id;
+        this.name = name;
     }
-
-    id() { return this._id; }
-    name() { return this._name; }
 }

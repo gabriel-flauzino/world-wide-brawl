@@ -5,6 +5,19 @@ import { MovieClipChild } from "./MovieClipChild";
 import { SupercellSWF } from "../SupercellSWF";
 
 export class MovieClip {
+    swf;
+    id;
+    exportName;
+    fps;
+    /**
+     * @type {MovieClipChild[]}
+     */
+    children = [];
+    /**
+     * @type {MovieClipFrame[]}
+     */
+    frames = [];
+    matrixBankIndex;
     /**
      * @param {SupercellSWF} swf
      * @param {FBMovieClip} fb 
@@ -15,9 +28,7 @@ export class MovieClip {
         this.id = fb.id();
         this.exportName = fb.exportNameRefId() !== 0 ? resources.strings(fb.exportNameRefId()) : null;
         this.fps = fb.fps();
-        this.customPropertyBoolean = fb.property() !== 0;
 
-        this.children = [];
         for (let i = 0; i < fb.childIdsLength(); i++) {
             this.children.push(new MovieClipChild(
                 fb.childIds(i),
@@ -26,7 +37,6 @@ export class MovieClip {
             ));
         }
 
-        this.frames = [];
         let frameElementOffset = fb.frameElementOffset() / 3;
 
         if (fb.framesLength() > 0) {
@@ -54,15 +64,11 @@ export class MovieClip {
         }
     }
 
-    getId() {
-        return this.id;
-    }
-
     getTimelineChildren() {
         if (this.timelineChildren == null) {
             this.timelineChildren = [];
             for (let i = 0; i < this.children.length; i++) {
-                this.timelineChildren[i] = this.swf.getOriginalDisplayObject(this.children[i].id & 0xFFFF, this.exportName);
+                this.timelineChildren[i] = this.swf.getObject(this.children[i].id, this.exportName);
             }
         }
 

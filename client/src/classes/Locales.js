@@ -22,6 +22,6 @@ export class Locales {
     }
 
     static get(key) {
-        return this.locales.find(x => x[0] == key)[1];
+        return this.locales.find(x => x[0] == key)?.[1];
     }
 }

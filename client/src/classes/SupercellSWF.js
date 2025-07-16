@@ -1,6 +1,6 @@
-import { FlatSupercellSWFLoader } from "./FlatSupercellSWFLoader";
+import { FBSCWEBLoader } from "./FBSCWEBLoader";
 import { Game } from "./Game";
-import { ScFileUnpacker } from "./ScFileUnpacker";
+import { SCWEBDecompresser } from "./ScFileUnpacker";
 import { SWFTexture } from "./swf_objects/SWFTexture";
 import { ScMatrixBank } from "./swf_objects/ScMatrixBank";
 import { MovieClip } from "./swf_objects/MovieClip";
@@ -10,24 +10,47 @@ import { TextField } from "./swf_objects/TextField";
 import { Shape } from "./swf_objects/Shape";
 import { TextFieldComponent } from "../components/swf_components/TextField";
 import { Matrix2x3 } from "./swf_objects/Matrix2x3";
+import { clearBuffer } from "../helpers/clearBuffer";
+import { ExportsManager } from "./swf_objects/ExportsManager";
+import { MatrixBanksManager } from "./swf_objects/MatrixBanksManager";
+import { TextFieldsManager } from "./swf_objects/TextFieldsManager";
+import { ShapesManager } from "./swf_objects/ShapesManager";
+import { MovieClipModifiersManager } from "./swf_objects/MovieClipModifiersManager";
+import { MovieClipsManager } from "./swf_objects/MovieClipsManager";
+import { TexturesManager } from "./swf_objects/TexturesManager";
 
 export class SupercellSWF {
     game;
     filepath;
     filename;
-    exports = [];
     /**
-     * @type { ScMatrixBank[] }
+     * @type {ExportsManager}
      */
-    matrixBanks = [];
-    textFields = [];
-    shapes = [];
-    movieClipModifiers = [];
-    movieClips = [];
+    exports;
     /**
-     * @type {SWFTexture[]}
+     * @type {MatrixBanksManager}
      */
-    textures = [];
+    matrixBanks;
+    /**
+     * @type {TextFieldsManager}
+     */
+    textFields;
+    /**
+     * @type {ShapesManager}
+     */
+    shapes;
+    /**
+     * @type {MovieClipModifiersManager}
+     */
+    movieClipModifiers;
+    /**
+     * @type {MovieClipsManager}
+     */
+    movieClips;
+    /**
+     * @type {TexturesManager}
+     */
+    textures;
 
     /**
      * 
@@ -37,29 +60,33 @@ export class SupercellSWF {
         this.game = game;
     }
 
-    async load(filepath, preferLowres = false) {
+    async load(filepath, onProgress) {
         this.filepath = filepath;
         this.filename = filepath.split(/\\|\//).pop().replace(".scweb", "");
 
         let msg = (m, ...a) => {
             console.log(`[${this.filename}] ${m}`, ...a)
         }
-
-        let s = Date.now();
-        msg("fetching");
-        let fileData = await fetch(filepath)
-            .then(res => res.arrayBuffer());
-        msg("fetched in " + (Date.now() - s ) + " ms");
-
-        let s2 = Date.now();
-        msg("unpacking")
-        let { decompressed } = ScFileUnpacker.unpack(fileData);
-        msg("unpacked in " + (Date.now() - s2) + " ms");
         
-        let s3 = Date.now();
-        msg("deserializing data");
-        let loader = new FlatSupercellSWFLoader(this, decompressed, preferLowres);
-        msg("deserialized in " + (Date.now() - s3) + " ms");
+        // fetching file
+        let fileData = await fetch(filepath)
+        .then(res => res.arrayBuffer());
+        if (onProgress && typeof onProgress == "function") {
+            onProgress();
+        }
+
+        // decompressing file
+        let decompressed = new SCWEBDecompresser(fileData).decompress();
+        if (onProgress && typeof onProgress == "function") {
+            onProgress();
+        }
+        
+        // deserializing data
+        let loader = new FBSCWEBLoader(this, decompressed);
+        clearBuffer(decompressed);
+        if (onProgress && typeof onProgress == "function") {
+            onProgress();
+        }
 
         this.exports = loader.exports;
         this.matrixBanks = loader.matrixBanks;
@@ -69,64 +96,44 @@ export class SupercellSWF {
         this.movieClips = loader.movieClips;
         this.textures = loader.textures;
 
-        let s4 = Date.now();
-        msg("loading textures");
-        await this.loadTextures();
-        msg("loaded textures in " + (Date.now() - s4) + " ms");
+        // fetches and loads textures
+        await this.textures.loadAll();
+        if (onProgress && typeof onProgress == "function") {
+            onProgress();
+        }
 
-        fileData = null;
-        decompressed = null;
-        loader = null;
+        console.log(this);
 
         return this;
     }
 
-    async loadTextures() {
-        for (let [i, texture] of Object.entries(this.textures)) {
-            await texture.load(i);
+    getObject(id) {
+        if (this.shapes.indexes.get(id) != undefined) {
+            return this.shapes.get(id);
         }
-    }
-
-    getOriginalMovieClip(id, name) {
-        for (let movieClip of this.movieClips) {
-            if (movieClip.getId() == id) {
-                return movieClip;
-            }
+        
+        if (this.movieClips.indexes.get(id) != undefined) {
+            return this.movieClips.get(id);
         }
-
-        throw new Error(`Unable to find some MovieClip id ${id}, from ${this.filename}${name ? " needed by export name " + name : ""}`);
-    }
-
-    getOriginalDisplayObject(id) {
-        for (let shape of this.shapes) {
-            if (shape.getId() == id) {
-                return shape;
-            }
+        
+        if (this.textFields.indexes.get(id) != undefined) {
+            return this.textFields.get(id);
         }
-
-        for (let movieClip of this.movieClips) {
-            if (movieClip.getId() == id) {
-                return movieClip;
-            }
-        }
-
-        for (let textField of this.textFields) {
-            if (textField.getId() == id) {
-                return textField;
-            }
-        }
-
-        for (let movieClipModifier of this.movieClipModifiers) {
-            if (movieClipModifier.getId() == id) {
-                return movieClipModifier;
-            }
+        
+        if (this.movieClipModifiers.indexes.get(id) != undefined) {
+            return this.movieClipModifiers.get(id);
         }
 
         throw new Error(`Unable to find some DisplayObject id ${id}, from ${this.filename}`);
     }
 
-    render(id, matrix2x3 = new Matrix2x3()) {
-        let object = this.getOriginalDisplayObject(id);
+    /**
+     * Returns the PIXI DisplayObject of an object.
+     * @param {number} id 
+     * @returns 
+     */
+    render(id) {
+        let object = this.getObject(id);
         let component;
 
         if (object instanceof MovieClip) {
@@ -142,14 +149,28 @@ export class SupercellSWF {
         }
 
         if (component) {
-            return component.render(undefined, matrix2x3);
+            return component.render();
         } else {
             throw new Error(`Object with id ${id} is not renderable in root: ${object.constructor.name}`)
         }
     }
 
-    renderByName(name, matrix2x3) {
-        let id = this.exports.find(x => x.name() == name)?.id?.();
-        return this.render(id, matrix2x3);
+    renderByName(name) {
+        let id = this.exports.getByName(name).id;
+        return this.render(id);
+    }
+
+    /**
+     * Renders a MovieClip
+     * @param {string} name 
+     * @returns {MovieClipComponent}
+     */
+    renderMovieClipByName(name) {
+        let component = this.renderByName(name);
+        if (component instanceof MovieClipComponent) {
+            return component;
+        } else {
+            throw new Error(`Object with name ${name} is not a MovieClip`);
+        }
     }
 }

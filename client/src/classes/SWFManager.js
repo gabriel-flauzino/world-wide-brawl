@@ -15,14 +15,21 @@ export class SWFManager {
         this.game = game;
     }
 
-    async fetch(name) {
+    /**
+     * Fetches a SWF or returns the cached one.
+     * @param {string} name 
+     * @param {() => any} onProgress 
+     * @returns 
+     */
+    async fetch(name, onProgress) {
         let swf = this._swfs.get(name);
         if (!swf) {
             try {
-                swf = await new SupercellSWF(this.game).load(`src/assets/scweb/${name}/${name}.scweb`);
+                swf = await new SupercellSWF(this.game).load(`src/assets/scweb/${name}/${name}.scweb`, onProgress);
                 this._swfs.set(name, swf);
             } catch(e) {
-                throw new Error("Could not load asset with name " + name);
+                e.message = `[${name}] Could not load asset: ${e.message}`;
+                throw e;
             }
         }
 
