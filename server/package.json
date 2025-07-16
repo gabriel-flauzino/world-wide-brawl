@@ -13,7 +13,8 @@
     "build": "npm run clean && tsc",
     "clean": "rimraf build",
     "test": "mocha -r tsx test/**_test.ts --exit --timeout 15000",
-    "convert": "tsx sc_converter/converter.js"
+    "convert": "tsx sc_converter/converter.ts",
+    "zstd": "tsx sc_converter/zstd_analyzer.ts"
   },
   "author": "",
   "license": "UNLICENSED",
